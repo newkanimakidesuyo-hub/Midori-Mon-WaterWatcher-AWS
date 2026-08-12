@@ -1,6 +1,6 @@
-import { APIGatewayProxyHandler } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 
-export const handler: APIGatewayProxyHandler = async (event) => {
+export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   console.log('Midori-Mon-WaterWatcher-Notification-cdk invoked', { event });
 
   return {
