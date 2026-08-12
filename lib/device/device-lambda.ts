@@ -15,4 +15,15 @@ export function createDeviceLambdas(stack: cdk.Stack) {
     },
   });
   
+  // Python version (imported from existing deployment) for testing
+  new lambda.Function(stack, 'WaterWatcherNotificationCdkFunctionPy', {
+    functionName: 'Midori-Mon-WaterWatcher-Notification-cdk-py',
+    runtime: lambda.Runtime.PYTHON_3_9,
+    handler: 'lambda_function.lambda_handler',
+    code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/device/notification_python')),
+    description: 'Python notification Lambda imported from existing deployment (for testing)',
+    environment: {
+      STACK_NAME: stack.stackName,
+    },
+  });
 }
