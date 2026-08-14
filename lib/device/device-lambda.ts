@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as path from 'path';
 
@@ -10,10 +11,11 @@ interface NotificationLambdaConfig {
   logGroupId: string;
   functionName: string;
   runtime: lambda.Runtime;
-  handler: string;
-  /** lambda/device/ からのコードディレクトリ */
-  codeDir: string;
+  /** lambda/device/ からのエントリーポイント（.ts） */
+  entryFile: string;
   description: string;
+  /** STACK_NAME に加えて付与する環境変数 */
+  environment?: Record<string, string>;
 }
 
 const NOTIFICATION_LAMBDAS: NotificationLambdaConfig[] = [
@@ -22,8 +24,7 @@ const NOTIFICATION_LAMBDAS: NotificationLambdaConfig[] = [
     logGroupId: 'WaterWatcherNotificationCdkFunctionLogGroupCustom',
     functionName: 'Midori-Mon-WaterWatcher-Notification-cdk',
     runtime: lambda.Runtime.NODEJS_18_X,
-    handler: 'notification-handler.handler',
-    codeDir: 'notification',
+    entryFile: 'notification/notification-handler.ts',
     description: 'Test notification Lambda for WaterWatcher migration',
   },
 ];
@@ -36,14 +37,15 @@ export function createDeviceLambdas(stack: cdk.Stack) {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    new lambda.Function(stack, config.functionId, {
+    new lambdaNodejs.NodejsFunction(stack, config.functionId, {
       functionName: config.functionName,
       runtime: config.runtime,
-      handler: config.handler,
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/device', config.codeDir)),
+      entry: path.join(__dirname, '../../lambda/device', config.entryFile),
+      depsLockFilePath: path.join(__dirname, '../../package-lock.json'),
       description: config.description,
       environment: {
         STACK_NAME: stack.stackName,
+        ...config.environment,
       },
       logGroup,
     });

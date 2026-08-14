@@ -1,5 +1,6 @@
 import * as cdk from 'aws-cdk-lib';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as path from 'path';
 
@@ -10,9 +11,8 @@ interface GraphLambdaConfig {
   logGroupId: string;
   functionName: string;
   runtime: lambda.Runtime;
-  handler: string;
-  /** lambda/graph/ からのコードディレクトリ */
-  codeDir: string;
+  /** lambda/graph/ からのエントリーポイント（.ts） */
+  entryFile: string;
   description: string;
   /** STACK_NAME に加えて付与する環境変数 */
   environment?: Record<string, string>;
@@ -25,8 +25,7 @@ const GRAPH_LAMBDAS: GraphLambdaConfig[] = [
     logGroupId: 'WaterWatcherGrafanaGraphCdkFunctionLogGroupCustom',
     functionName: 'Midori-Mon-WaterWatcher-Grafana-Graph-cdk',
     runtime: lambda.Runtime.NODEJS_24_X,
-    handler: 'grafana-api-handler.handler',
-    codeDir: 'grafana-api',
+    entryFile: 'grafana-api/grafana-api-handler.ts',
     description: 'Grafana SimpleJSON datasource API Lambda imported from existing deployment (for testing)',
     environment: {
       DYNAMODB_TABLE_MOISTURE: 'Midori-Mon-WaterWatcher-DB-MoistureSensor',
@@ -44,11 +43,11 @@ export function createGraphLambdas(stack: cdk.Stack) {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    new lambda.Function(stack, config.functionId, {
+    new lambdaNodejs.NodejsFunction(stack, config.functionId, {
       functionName: config.functionName,
       runtime: config.runtime,
-      handler: config.handler,
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../lambda/graph', config.codeDir)),
+      entry: path.join(__dirname, '../../lambda/graph', config.entryFile),
+      depsLockFilePath: path.join(__dirname, '../../package-lock.json'),
       description: config.description,
       environment: {
         STACK_NAME: stack.stackName,
