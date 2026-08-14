@@ -2,13 +2,8 @@ import * as cdk from 'aws-cdk-lib';
 import * as logs from 'aws-cdk-lib/aws-logs';
 
 export function createDeviceCloudWatch(stack: cdk.Stack) {
-  const makeSafeName = (base: string, stackName: string) => {
-    const raw = `${base}-${stackName}`;
-    return raw.length <= 64 ? raw : raw.slice(0, 64);
-  };
-
-  const nodeFunctionName = makeSafeName('Midori-Mon-WaterWatcher-Notification-cdk', stack.stackName);
-  const pyFunctionName = makeSafeName('Midori-Mon-WaterWatcher-Notification-cdk-py', stack.stackName);
+  const nodeFunctionName = 'Midori-Mon-WaterWatcher-Notification-cdk';
+  const pyFunctionName = 'Midori-Mon-WaterWatcher-Notification-cdk-py';
 
   const nodeLogGroup = new logs.LogGroup(stack, 'WaterWatcherNotificationCdkFunctionLogGroupCustom', {
     logGroupName: `/aws/lambda/${nodeFunctionName}`,
