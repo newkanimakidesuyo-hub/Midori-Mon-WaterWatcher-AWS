@@ -19,6 +19,7 @@ interface NotificationLambdaConfig {
   description: string;
   /** STACK_NAME に加えて付与する環境変数 */
   environment?: Record<string, string>;
+  timeout: cdk.Duration;
 }
 
 const MOISTURE_TABLE_NAME = 'Midori-Mon-WaterWatcher-DB-MoistureSensor';
@@ -37,6 +38,9 @@ const NOTIFICATION_LAMBDAS: NotificationLambdaConfig[] = [
     runtime: lambda.Runtime.NODEJS_18_X,
     entryFile: 'notification/notification-handler.ts',
     description: 'Test notification Lambda for WaterWatcher migration',
+    // 本番は3秒設定だが、-cdk版はDiscord Webhook URLをSSMから毎回取得する分レイテンシが増えるため余裕を持たせる
+    // (実測: DynamoDB書き込み×3 + SSM取得 + Discord送信 + Shadow更新で3秒ぎりぎり/超過を確認したため)
+    timeout: cdk.Duration.seconds(10),
     environment: {
       DYNAMODB_MOISTURE_TABLE_NAME: MOISTURE_TABLE_NAME,
       DYNAMODB_BATTERY_TABLE_NAME: BATTERY_TABLE_NAME,
@@ -62,6 +66,7 @@ export function createDeviceLambdas(stack: cdk.Stack): Record<string, lambdaNode
       entry: path.join(__dirname, '../../lambda/device', config.entryFile),
       depsLockFilePath: path.join(__dirname, '../../package-lock.json'),
       description: config.description,
+      timeout: config.timeout,
       environment: {
         STACK_NAME: stack.stackName,
         ...config.environment,
