@@ -1,6 +1,30 @@
-import { DISCORD_WEBHOOK_URL } from './config';
+import { GetParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
+
+import { DISCORD_WEBHOOK_URL_PARAM_NAME } from './config';
+
+const ssmClient = new SSMClient({});
+
+// コールドスタート間で使い回すキャッシュ（同一実行環境内のウォーム呼び出しではSSMを叩き直さない）
+let cachedWebhookUrl: string | undefined;
+
+async function getWebhookUrl(): Promise<string> {
+  if (cachedWebhookUrl) return cachedWebhookUrl;
+
+  const result = await ssmClient.send(
+    new GetParameterCommand({ Name: DISCORD_WEBHOOK_URL_PARAM_NAME, WithDecryption: true }),
+  );
+  const value = result.Parameter?.Value;
+  if (!value) {
+    throw new Error(`SSM parameter "${DISCORD_WEBHOOK_URL_PARAM_NAME}" has no value`);
+  }
+
+  cachedWebhookUrl = value;
+  return value;
+}
 
 export async function sendDiscordEmbed(title: string, description: string, color = 0x2ecc71): Promise<string> {
+  const webhookUrl = await getWebhookUrl();
+
   const payload = {
     username: 'ミドリモン',
     embeds: [
@@ -13,7 +37,7 @@ export async function sendDiscordEmbed(title: string, description: string, color
     ],
   };
 
-  const res = await fetch(`${DISCORD_WEBHOOK_URL}?wait=true`, {
+  const res = await fetch(`${webhookUrl}?wait=true`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

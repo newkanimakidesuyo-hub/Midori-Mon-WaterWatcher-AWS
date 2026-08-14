@@ -7,7 +7,9 @@ function requireEnv(name: string): string {
 }
 
 // Environment variables
-export const DISCORD_WEBHOOK_URL = requireEnv('DISCORD_WEBHOOK_URL');
+// DISCORD_WEBHOOK_URL は値そのものではなく、SSM Parameter Store (SecureString) のパラメータ名を渡す。
+// 実際の値は discord-notifier.ts が実行時にSSMから取得する。
+export const DISCORD_WEBHOOK_URL_PARAM_NAME = requireEnv('DISCORD_WEBHOOK_URL_PARAM_NAME');
 export const THING_NAME = process.env.THING_NAME ?? 'Midori-Mon-WaterWatcher';
 
 // DynamoDB
