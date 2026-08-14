@@ -5,7 +5,8 @@
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
     "outDir": "dist"
   },
-  "include": ["notification-handler.ts"]
+  "include": ["*.ts"]
 }

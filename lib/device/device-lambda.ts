@@ -26,16 +26,6 @@ const NOTIFICATION_LAMBDAS: NotificationLambdaConfig[] = [
     codeDir: 'notification',
     description: 'Test notification Lambda for WaterWatcher migration',
   },
-  {
-    // Python版（既存デプロイからコードを移植。テスト目的）
-    functionId: 'WaterWatcherNotificationCdkFunctionPy',
-    logGroupId: 'WaterWatcherNotificationCdkFunctionPyLogGroupCustom',
-    functionName: 'Midori-Mon-WaterWatcher-Notification-cdk-py',
-    runtime: lambda.Runtime.PYTHON_3_9,
-    handler: 'lambda_function.lambda_handler',
-    codeDir: 'notification_python',
-    description: 'Python notification Lambda imported from existing deployment (for testing)',
-  },
 ];
 
 export function createDeviceLambdas(stack: cdk.Stack) {
