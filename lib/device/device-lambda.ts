@@ -4,7 +4,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as path from 'path';
 
 export function createDeviceLambdas(stack: cdk.Stack, opts: { nodeLogGroup: logs.LogGroup; pyLogGroup: logs.LogGroup; nodeFunctionName: string; pyFunctionName: string; }) {
-  const { nodeFunctionName, pyFunctionName } = opts;
+  const { nodeLogGroup, pyLogGroup, nodeFunctionName, pyFunctionName } = opts;
 
   new lambda.Function(stack, 'WaterWatcherNotificationCdkFunction', {
     functionName: nodeFunctionName,
@@ -15,8 +15,9 @@ export function createDeviceLambdas(stack: cdk.Stack, opts: { nodeLogGroup: logs
     environment: {
       STACK_NAME: stack.stackName,
     },
+    logGroup: nodeLogGroup,
   });
-  
+
   // Python version (imported from existing deployment) for testing
   new lambda.Function(stack, 'WaterWatcherNotificationCdkFunctionPy', {
     functionName: pyFunctionName,
@@ -27,5 +28,6 @@ export function createDeviceLambdas(stack: cdk.Stack, opts: { nodeLogGroup: logs
     environment: {
       STACK_NAME: stack.stackName,
     },
+    logGroup: pyLogGroup,
   });
 }
