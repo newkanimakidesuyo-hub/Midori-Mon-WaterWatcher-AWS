@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -35,7 +36,13 @@ const GRAPH_LAMBDAS: GraphLambdaConfig[] = [
   },
 ];
 
-export function createGraphLambdas(stack: cdk.Stack) {
+/** 既存デプロイ済みのDynamoDBテーブル（CDK未管理）への参照。ID指定でimportしているだけで、CDKからは作成/削除しない。 */
+const MOISTURE_TABLE_NAME = 'Midori-Mon-WaterWatcher-DB-MoistureSensor';
+const TEMPERATURE_TABLE_NAME = 'Midori-Mon-WaterWatcher-DB-TemperatureSensor';
+
+export function createGraphLambdas(stack: cdk.Stack): Record<string, lambdaNodejs.NodejsFunction> {
+  const functions: Record<string, lambdaNodejs.NodejsFunction> = {};
+
   for (const config of GRAPH_LAMBDAS) {
     const logGroup = new logs.LogGroup(stack, config.logGroupId, {
       logGroupName: `/aws/lambda/${config.functionName}`,
@@ -43,7 +50,7 @@ export function createGraphLambdas(stack: cdk.Stack) {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    new lambdaNodejs.NodejsFunction(stack, config.functionId, {
+    functions[config.functionId] = new lambdaNodejs.NodejsFunction(stack, config.functionId, {
       functionName: config.functionName,
       runtime: config.runtime,
       entry: path.join(__dirname, '../../lambda/graph', config.entryFile),
@@ -56,4 +63,17 @@ export function createGraphLambdas(stack: cdk.Stack) {
       logGroup,
     });
   }
+
+  // Grafana-Graph は読み取り専用でMoisture/Temperatureテーブルを参照する（本番と同じ既存テーブルをimport）
+  const grafanaGraphFn = functions['WaterWatcherGrafanaGraphCdkFunction'];
+  const moistureTable = dynamodb.Table.fromTableName(stack, 'GrafanaGraphCdkMoistureTableRef', MOISTURE_TABLE_NAME);
+  const temperatureTable = dynamodb.Table.fromTableName(
+    stack,
+    'GrafanaGraphCdkTemperatureTableRef',
+    TEMPERATURE_TABLE_NAME,
+  );
+  moistureTable.grantReadData(grafanaGraphFn);
+  temperatureTable.grantReadData(grafanaGraphFn);
+
+  return functions;
 }
