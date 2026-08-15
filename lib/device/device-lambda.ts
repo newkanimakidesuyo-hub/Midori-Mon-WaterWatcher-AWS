@@ -3,44 +3,29 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
-import * as logs from 'aws-cdk-lib/aws-logs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as path from 'path';
+import { createLambdaWithLogGroup, LambdaWithLogGroupConfig } from '../shared/create-lambda';
+import { BATTERY_TABLE_NAME, MOISTURE_TABLE_NAME, TEMPERATURE_TABLE_NAME } from '../shared/water-watcher-constants';
 
-interface NotificationLambdaConfig {
-  /** Lambda関数のCFN論理ID */
-  functionId: string;
-  /** 専用LogGroupのCFN論理ID */
-  logGroupId: string;
-  functionName: string;
-  runtime: lambda.Runtime;
-  /** lambda/device/ からのエントリーポイント（.ts） */
-  entryFile: string;
-  description: string;
-  /** STACK_NAME に加えて付与する環境変数 */
-  environment?: Record<string, string>;
-  timeout: cdk.Duration;
-}
-
-const MOISTURE_TABLE_NAME = 'Midori-Mon-WaterWatcher-DB-MoistureSensor';
-const BATTERY_TABLE_NAME = 'Midori-Mon-WaterWatcher-DB-DeviceBattery';
-const TEMPERATURE_TABLE_NAME = 'Midori-Mon-WaterWatcher-DB-TemperatureSensor';
-
-// テスト用Discord WebhookのURLを保持するSSM Parameter Store (SecureString) の名前。
+// 通知先Discord WebhookのURLを保持するSSM Parameter Store (SecureString) の名前。
 // 値自体はCDKで管理せず、事前に `aws ssm put-parameter --type SecureString` で登録しておく想定。
 const DISCORD_WEBHOOK_URL_PARAM_NAME = '/midori-mon-waterwatcher/notification-cdk/discord-webhook-url';
 
-const NOTIFICATION_LAMBDAS: NotificationLambdaConfig[] = [
+const NOTIFICATION_LAMBDAS: LambdaWithLogGroupConfig[] = [
   {
     functionId: 'WaterWatcherNotificationCdkFunction',
     logGroupId: 'WaterWatcherNotificationCdkFunctionLogGroupCustom',
     functionName: 'Midori-Mon-WaterWatcher-Notification-cdk',
     runtime: lambda.Runtime.NODEJS_18_X,
-    entryFile: 'notification/notification-handler.ts',
-    description: 'Test notification Lambda for WaterWatcher migration',
+    entry: path.join(__dirname, '../../lambda/device/notification/notification-handler.ts'),
+    depsLockFilePath: path.join(__dirname, '../../package-lock.json'),
+    description: 'Sends a Discord alert and writes sensor readings to DynamoDB when a WaterWatcher device reports its IoT Shadow',
     // 本番は3秒設定だが、-cdk版はDiscord Webhook URLをSSMから毎回取得する分レイテンシが増えるため余裕を持たせる
     // (実測: DynamoDB書き込み×3 + SSM取得 + Discord送信 + Shadow更新で3秒ぎりぎり/超過を確認したため)
     timeout: cdk.Duration.seconds(10),
+    memorySize: 128, // 本番と同値
+    reservedConcurrentExecutions: 5, // 本番と同値
     environment: {
       DYNAMODB_MOISTURE_TABLE_NAME: MOISTURE_TABLE_NAME,
       DYNAMODB_BATTERY_TABLE_NAME: BATTERY_TABLE_NAME,
@@ -54,25 +39,7 @@ export function createDeviceLambdas(stack: cdk.Stack): Record<string, lambdaNode
   const functions: Record<string, lambdaNodejs.NodejsFunction> = {};
 
   for (const config of NOTIFICATION_LAMBDAS) {
-    const logGroup = new logs.LogGroup(stack, config.logGroupId, {
-      logGroupName: `/aws/lambda/${config.functionName}`,
-      retention: logs.RetentionDays.ONE_YEAR,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-    });
-
-    functions[config.functionId] = new lambdaNodejs.NodejsFunction(stack, config.functionId, {
-      functionName: config.functionName,
-      runtime: config.runtime,
-      entry: path.join(__dirname, '../../lambda/device', config.entryFile),
-      depsLockFilePath: path.join(__dirname, '../../package-lock.json'),
-      description: config.description,
-      timeout: config.timeout,
-      environment: {
-        STACK_NAME: stack.stackName,
-        ...config.environment,
-      },
-      logGroup,
-    });
+    functions[config.functionId] = createLambdaWithLogGroup(stack, config);
   }
 
   // Notification: IoT Shadowの読み書き + Moisture/Battery/Temperatureテーブルへの書き込み権限（本番Lambdaの既存ポリシーと同一）
@@ -97,7 +64,7 @@ export function createDeviceLambdas(stack: cdk.Stack): Record<string, lambdaNode
   batteryTable.grant(notificationFn, 'dynamodb:PutItem');
   temperatureTable.grant(notificationFn, 'dynamodb:PutItem');
 
-  // Discord Webhook URL（テスト用）。値はSSMに事前登録済みのものを実行時に取得する
+  // Discord Webhook URL。値はSSMに事前登録済みのものを実行時に取得する
   const webhookParam = ssm.StringParameter.fromSecureStringParameterAttributes(
     stack,
     'NotificationCdkDiscordWebhookParam',
