@@ -1,0 +1,16 @@
+{
+  "name": "waterwatcher-lambda-shared",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@aws-sdk/client-iot-data-plane": "^3.900.0",
+    "@aws-sdk/client-ssm": "^3.900.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.6.0"
+  }
+}

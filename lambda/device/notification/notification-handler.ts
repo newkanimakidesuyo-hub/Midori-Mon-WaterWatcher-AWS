@@ -2,7 +2,9 @@ import { LOW_MESSAGES, LOW_THRESHOLD, RECOVERY_MESSAGES, RECOVERY_THRESHOLD, THI
 import { writeBatteryData, writeMoistureData, writeTemperatureData } from './db-writer';
 import { sendDiscordEmbed } from './discord-notifier';
 import { BatteryInfo, ShadowEvent, extractBattery, extractMoisture, extractMoistureResult, extractTemperature } from './event-parser';
-import { getReportedFlags, updateShadowFlags } from './iot-shadow';
+import { getReportedFlags, updateReportedFlags } from '../../shared/iot-shadow-flags';
+
+const SHADOW_FLAG_KEYS = ['alerted', 'charging_alerted'] as const;
 
 interface LambdaResult {
   statusCode: number;
@@ -33,7 +35,7 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
   const battery = extractBattery(event);
   const temperature = extractTemperature(event);
   const thingName = event?.thing_name ?? THING_NAME;
-  const flags = await getReportedFlags(thingName);
+  const flags = await getReportedFlags(thingName, SHADOW_FLAG_KEYS);
 
   console.log(
     `Parsed: moisture=${moisture}, moisture_result=${moistureResult}, ` +
@@ -50,15 +52,15 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
 
   // 給電停止/再開チェック（水分データの有無とは独立に毎回実行する）
   const isCharging = battery?.is_charging ?? null;
-  if (isCharging === false && !flags.chargingAlerted) {
+  if (isCharging === false && !flags.charging_alerted) {
     const text = `**${thingName}**\n⚡ 給電が停止しました。まもなく稼働が停止する可能性があります。${battLine}`;
     await sendDiscordEmbed('🔌 給電停止アラート', text, 0xffa500);
-    await updateShadowFlags(thingName, { chargingAlerted: true });
+    await updateReportedFlags(thingName, { charging_alerted: true });
     actions.push('charging stop alert sent');
-  } else if (isCharging === true && flags.chargingAlerted) {
+  } else if (isCharging === true && flags.charging_alerted) {
     const text = `**${thingName}**\n🔌 給電が再開しました。${battLine}`;
     await sendDiscordEmbed('🔌 給電再開', text, 0x4ecdc4);
-    await updateShadowFlags(thingName, { chargingAlerted: false });
+    await updateReportedFlags(thingName, { charging_alerted: false });
     actions.push('charging resume sent');
   }
 
@@ -72,12 +74,12 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
   if (moisture <= LOW_THRESHOLD && !flags.alerted) {
     const text = `**${thingName}**\n${pickRandom(LOW_MESSAGES)}\n現在の水分: **${moisture}%**${battLine}`;
     await sendDiscordEmbed('🚨 水分不足アラート', text, 0xff6b6b);
-    await updateShadowFlags(thingName, { alerted: true });
+    await updateReportedFlags(thingName, { alerted: true });
     actions.push('low alert sent');
   } else if (moisture >= RECOVERY_THRESHOLD && flags.alerted) {
     const text = `**${thingName}**\n${pickRandom(RECOVERY_MESSAGES)}\n現在の水分: **${moisture}%**${battLine}`;
     await sendDiscordEmbed('✅ 回復通知', text, 0x4ecdc4); // 緑青系
-    await updateShadowFlags(thingName, { alerted: false });
+    await updateReportedFlags(thingName, { alerted: false });
     actions.push('recovery sent');
   }
 

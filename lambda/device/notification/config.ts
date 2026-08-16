@@ -1,10 +1,4 @@
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
+import { requireEnv } from '../../shared/env';
 
 // Environment variables
 // DISCORD_WEBHOOK_URL は値そのものではなく、SSM Parameter Store (SecureString) のパラメータ名を渡す。
