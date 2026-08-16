@@ -20,4 +20,15 @@ export const THING_NAMES = (process.env.THING_NAMES ?? '')
   .filter((name) => name.length > 0);
 
 // この時間（時間単位）データが来ない場合に無応答アラートを出す
-export const OFFLINE_THRESHOLD_HOURS = Number(process.env.OFFLINE_THRESHOLD_HOURS ?? '3');
+function parseOfflineThresholdHours(): number {
+  const raw = process.env.OFFLINE_THRESHOLD_HOURS ?? '3';
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    // NaNのまま使うと閾値比較が常にfalseになり、アラートが一切発報されなくなる（エラーも出ない）ため、
+    // 起動時に検知して落とす。
+    throw new Error(`OFFLINE_THRESHOLD_HOURS must be a positive number, got: "${raw}"`);
+  }
+  return parsed;
+}
+
+export const OFFLINE_THRESHOLD_HOURS = parseOfflineThresholdHours();
