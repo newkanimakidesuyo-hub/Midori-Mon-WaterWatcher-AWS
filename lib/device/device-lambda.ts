@@ -25,7 +25,10 @@ const NOTIFICATION_LAMBDAS: LambdaWithLogGroupConfig[] = [
     // (実測: DynamoDB書き込み×3 + SSM取得 + Discord送信 + Shadow更新で3秒ぎりぎり/超過を確認したため)
     timeout: cdk.Duration.seconds(10),
     memorySize: 128, // 本番と同値
-    reservedConcurrentExecutions: 5, // 本番と同値
+    // 本番は5だが、あえて1に絞っている。同一Thingへの同時実行があると、IoT Shadowの
+    // read-then-write（alerted/charging_alertedフラグ）がレースし、Discordへの重複通知が起きうるため。
+    // デバイスは1台あたり1時間に1回程度の頻度でしか報告しないため、1に絞ってもスループット上の実害はない。
+    reservedConcurrentExecutions: 1,
     environment: {
       DYNAMODB_MOISTURE_TABLE_NAME: MOISTURE_TABLE_NAME,
       DYNAMODB_BATTERY_TABLE_NAME: BATTERY_TABLE_NAME,
