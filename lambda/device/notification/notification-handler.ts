@@ -2,7 +2,7 @@ import { LOW_MESSAGES, LOW_THRESHOLD, RECOVERY_MESSAGES, RECOVERY_THRESHOLD, THI
 import { writeBatteryData, writeMoistureData, writeTemperatureData } from './db-writer';
 import { sendDiscordEmbed } from './discord-notifier';
 import { BatteryInfo, ShadowEvent, extractBattery, extractMoisture, extractMoistureResult, extractTemperature } from './event-parser';
-import { getAlertedFlag, updateShadowAlerted } from './iot-shadow';
+import { getReportedFlags, updateShadowFlags } from './iot-shadow';
 
 interface LambdaResult {
   statusCode: number;
@@ -33,41 +33,58 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
   const battery = extractBattery(event);
   const temperature = extractTemperature(event);
   const thingName = event?.thing_name ?? THING_NAME;
-  const alreadyAlerted = await getAlertedFlag(thingName);
+  const flags = await getReportedFlags(thingName);
 
   console.log(
     `Parsed: moisture=${moisture}, moisture_result=${moistureResult}, ` +
-      `battery=${JSON.stringify(battery)}, temperature=${JSON.stringify(temperature)}, alerted=${alreadyAlerted}, thing_name=${thingName}`,
+      `battery=${JSON.stringify(battery)}, temperature=${JSON.stringify(temperature)}, flags=${JSON.stringify(flags)}, thing_name=${thingName}`,
   );
 
   // 受信データを問わず毎回DynamoDBに記録
-  await writeMoistureData(thingName, moisture, moistureResult, alreadyAlerted);
+  await writeMoistureData(thingName, moisture, moistureResult, flags.alerted);
   await writeBatteryData(thingName, battery);
   await writeTemperatureData(thingName, temperature);
 
-  if (moisture === null) {
-    console.log('Moisture not found. Skip.');
-    return { statusCode: 200, body: 'skipped: no moisture' };
+  const battLine = batteryLine(battery);
+  const actions: string[] = [];
+
+  // 給電停止/再開チェック（水分データの有無とは独立に毎回実行する）
+  const isCharging = battery?.is_charging ?? null;
+  if (isCharging === false && !flags.chargingAlerted) {
+    const text = `**${thingName}**\n⚡ 給電が停止しました。まもなく稼働が停止する可能性があります。${battLine}`;
+    await sendDiscordEmbed('🔌 給電停止アラート', text, 0xffa500);
+    await updateShadowFlags(thingName, { chargingAlerted: true });
+    actions.push('charging stop alert sent');
+  } else if (isCharging === true && flags.chargingAlerted) {
+    const text = `**${thingName}**\n🔌 給電が再開しました。${battLine}`;
+    await sendDiscordEmbed('🔌 給電再開', text, 0x4ecdc4);
+    await updateShadowFlags(thingName, { chargingAlerted: false });
+    actions.push('charging resume sent');
   }
 
-  console.log(`Check: moisture=${moisture}, alerted=${alreadyAlerted}`);
+  if (moisture === null) {
+    console.log('Moisture not found. Skip moisture check.');
+    return { statusCode: 200, body: actions.length > 0 ? actions.join(', ') : 'skipped: no moisture' };
+  }
 
-  const battLine = batteryLine(battery);
+  console.log(`Check: moisture=${moisture}, alerted=${flags.alerted}`);
 
-  if (moisture <= LOW_THRESHOLD && !alreadyAlerted) {
+  if (moisture <= LOW_THRESHOLD && !flags.alerted) {
     const text = `**${thingName}**\n${pickRandom(LOW_MESSAGES)}\n現在の水分: **${moisture}%**${battLine}`;
     await sendDiscordEmbed('🚨 水分不足アラート', text, 0xff6b6b);
-    await updateShadowAlerted(thingName, true);
-    return { statusCode: 200, body: 'low alert sent' };
-  }
-
-  if (moisture >= RECOVERY_THRESHOLD && alreadyAlerted) {
+    await updateShadowFlags(thingName, { alerted: true });
+    actions.push('low alert sent');
+  } else if (moisture >= RECOVERY_THRESHOLD && flags.alerted) {
     const text = `**${thingName}**\n${pickRandom(RECOVERY_MESSAGES)}\n現在の水分: **${moisture}%**${battLine}`;
     await sendDiscordEmbed('✅ 回復通知', text, 0x4ecdc4); // 緑青系
-    await updateShadowAlerted(thingName, false);
-    return { statusCode: 200, body: 'recovery sent' };
+    await updateShadowFlags(thingName, { alerted: false });
+    actions.push('recovery sent');
   }
 
-  console.log('No action taken.');
-  return { statusCode: 200, body: 'no action' };
+  if (actions.length === 0) {
+    console.log('No action taken.');
+    return { statusCode: 200, body: 'no action' };
+  }
+
+  return { statusCode: 200, body: actions.join(', ') };
 };
