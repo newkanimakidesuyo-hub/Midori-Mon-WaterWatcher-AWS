@@ -7,6 +7,7 @@ import * as path from 'path';
 import { createLambdaWithLogGroup, grantThingShadowAccess, LambdaWithLogGroupConfig } from '../shared/create-lambda';
 import {
   BATTERY_TABLE_NAME,
+  DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME,
   DISCORD_WEBHOOK_URL_PARAM_NAME,
   MOISTURE_TABLE_NAME,
   TEMPERATURE_TABLE_NAME,
@@ -34,6 +35,7 @@ const NOTIFICATION_LAMBDAS: LambdaWithLogGroupConfig[] = [
       DYNAMODB_BATTERY_TABLE_NAME: BATTERY_TABLE_NAME,
       DYNAMODB_TEMPERATURE_TABLE_NAME: TEMPERATURE_TABLE_NAME,
       DISCORD_WEBHOOK_URL_PARAM_NAME,
+      DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME,
     },
   },
 ];
@@ -61,13 +63,21 @@ export function createDeviceLambdas(stack: cdk.Stack): Record<string, lambdaNode
   batteryTable.grant(notificationFn, 'dynamodb:PutItem');
   temperatureTable.grant(notificationFn, 'dynamodb:PutItem');
 
-  // Discord Webhook URL。値はSSMに事前登録済みのものを実行時に取得する
+  // Discord Webhook URL（水分不足/回復用）。値はSSMに事前登録済みのものを実行時に取得する
   const webhookParam = ssm.StringParameter.fromSecureStringParameterAttributes(
     stack,
     'NotificationCdkDiscordWebhookParam',
     { parameterName: DISCORD_WEBHOOK_URL_PARAM_NAME },
   );
   webhookParam.grantRead(notificationFn);
+
+  // Discord Webhook URL（給電停止/再開用、デバイス健全性チャンネル）
+  const deviceHealthWebhookParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+    stack,
+    'NotificationCdkDeviceHealthWebhookParam',
+    { parameterName: DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME },
+  );
+  deviceHealthWebhookParam.grantRead(notificationFn);
 
   return functions;
 }

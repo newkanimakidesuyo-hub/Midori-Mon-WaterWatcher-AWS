@@ -13,5 +13,10 @@ export const THING_NAMES = [
 ];
 
 // 通知先Discord WebhookのURLを保持するSSM Parameter Store (SecureString) の名前。
-// Notification-cdk / DeviceMonitor-cdk の両方が同一パラメータを参照し、通知先チャンネルを1本化する。
+// 水分不足/回復の通知チャンネル。Notification-cdkのみが使用する。
 export const DISCORD_WEBHOOK_URL_PARAM_NAME = '/midori-mon-waterwatcher/notification-cdk/discord-webhook-url';
+
+// デバイスの健全性に関する通知（給電停止/再開、デバイス無応答/復帰）専用のチャンネル。
+// 水分不足の通知と機能が混ざらないよう、Notification-cdk / DeviceMonitor-cdk の両方がこちらを参照する。
+export const DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME =
+  '/midori-mon-waterwatcher/notification-cdk/discord-webhook-url-device-health';

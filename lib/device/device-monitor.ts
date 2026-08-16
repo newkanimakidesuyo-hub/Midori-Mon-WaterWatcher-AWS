@@ -6,7 +6,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as path from 'path';
 import { createLambdaWithLogGroup, grantThingShadowAccess } from '../shared/create-lambda';
-import { DISCORD_WEBHOOK_URL_PARAM_NAME, MOISTURE_TABLE_NAME, THING_NAMES } from '../shared/water-watcher-constants';
+import { DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME, MOISTURE_TABLE_NAME, THING_NAMES } from '../shared/water-watcher-constants';
 
 const FUNCTION_NAME = 'Midori-Mon-WaterWatcher-DeviceMonitor-cdk';
 const OFFLINE_THRESHOLD_HOURS = 3;
@@ -32,7 +32,9 @@ export function createDeviceMonitor(stack: cdk.Stack): lambda.IFunction {
       DYNAMODB_MOISTURE_TABLE_NAME: MOISTURE_TABLE_NAME,
       THING_NAMES: THING_NAMES.join(','),
       OFFLINE_THRESHOLD_HOURS: String(OFFLINE_THRESHOLD_HOURS),
-      DISCORD_WEBHOOK_URL_PARAM_NAME,
+      // Lambda側の環境変数名はDISCORD_WEBHOOK_URL_PARAM_NAMEのままだが、値はデバイス健全性チャンネル用
+      // パラメータを渡す（無応答/復帰の通知は水分不足と分離し、こちらのチャンネルに一本化するため）
+      DISCORD_WEBHOOK_URL_PARAM_NAME: DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME,
     },
   });
 
@@ -43,11 +45,11 @@ export function createDeviceMonitor(stack: cdk.Stack): lambda.IFunction {
   // IoT Shadow: 無応答アラート済みフラグの読み書き
   grantThingShadowAccess(stack, monitorFn);
 
-  // Discord Webhook URL（Notification-cdkと共通のパラメータ）
+  // Discord Webhook URL（デバイス健全性チャンネル。Notification-cdkの給電停止/再開通知と共通のパラメータ）
   const webhookParam = ssm.StringParameter.fromSecureStringParameterAttributes(
     stack,
     'DeviceMonitorCdkDiscordWebhookParam',
-    { parameterName: DISCORD_WEBHOOK_URL_PARAM_NAME },
+    { parameterName: DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME },
   );
   webhookParam.grantRead(monitorFn);
 

@@ -3,7 +3,10 @@ import { requireEnv } from '../../shared/env';
 // Environment variables
 // DISCORD_WEBHOOK_URL は値そのものではなく、SSM Parameter Store (SecureString) のパラメータ名を渡す。
 // 実際の値は discord-notifier.ts が実行時にSSMから取得する。
+// 水分不足/回復の通知チャンネル
 export const DISCORD_WEBHOOK_URL_PARAM_NAME = requireEnv('DISCORD_WEBHOOK_URL_PARAM_NAME');
+// 給電停止/再開の通知チャンネル（水分不足とは別チャンネル）
+export const DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME = requireEnv('DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME');
 export const THING_NAME = process.env.THING_NAME ?? 'Midori-Mon-WaterWatcher';
 
 // DynamoDB

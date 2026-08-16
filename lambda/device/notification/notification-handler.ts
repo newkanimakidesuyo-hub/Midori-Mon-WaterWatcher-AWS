@@ -1,6 +1,6 @@
 import { LOW_MESSAGES, LOW_THRESHOLD, RECOVERY_MESSAGES, RECOVERY_THRESHOLD, THING_NAME } from './config';
 import { writeBatteryData, writeMoistureData, writeTemperatureData } from './db-writer';
-import { sendDiscordEmbed } from './discord-notifier';
+import { sendDeviceHealthDiscordEmbed, sendDiscordEmbed } from './discord-notifier';
 import { BatteryInfo, ShadowEvent, extractBattery, extractMoisture, extractMoistureResult, extractTemperature } from './event-parser';
 import { getReportedFlags, updateReportedFlags } from '../../shared/iot-shadow-flags';
 
@@ -54,12 +54,12 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
   const isCharging = battery?.is_charging ?? null;
   if (isCharging === false && !flags.charging_alerted) {
     const text = `**${thingName}**\n⚡ 給電が停止しました。まもなく稼働が停止する可能性があります。${battLine}`;
-    await sendDiscordEmbed('🔌 給電停止アラート', text, 0xffa500);
+    await sendDeviceHealthDiscordEmbed('🔌 給電停止アラート', text, 0xffa500);
     await updateReportedFlags(thingName, { charging_alerted: true });
     actions.push('charging stop alert sent');
   } else if (isCharging === true && flags.charging_alerted) {
     const text = `**${thingName}**\n🔌 給電が再開しました。${battLine}`;
-    await sendDiscordEmbed('🔌 給電再開', text, 0x4ecdc4);
+    await sendDeviceHealthDiscordEmbed('🔌 給電再開', text, 0x4ecdc4);
     await updateReportedFlags(thingName, { charging_alerted: false });
     actions.push('charging resume sent');
   }
