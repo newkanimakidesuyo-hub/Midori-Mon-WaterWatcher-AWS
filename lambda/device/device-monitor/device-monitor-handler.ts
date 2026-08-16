@@ -3,7 +3,9 @@ import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
 import { DYNAMODB_MOISTURE_TABLE_NAME, OFFLINE_THRESHOLD_HOURS, THING_NAMES } from './config';
 import { sendDiscordEmbed } from './discord-notifier';
-import { getOfflineAlertedFlag, updateOfflineAlertedFlag } from './iot-shadow';
+import { getReportedFlags, updateReportedFlags } from '../../shared/iot-shadow-flags';
+
+const SHADOW_FLAG_KEYS = ['offline_alerted'] as const;
 
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -34,7 +36,11 @@ async function getLastSeenAt(thingName: string): Promise<Date | null> {
 /** 1台分のThingについて、無応答/復帰の判定と通知を行う。 */
 async function checkThing(thingName: string, now: Date): Promise<string> {
   // DynamoDBの最終受信時刻取得とIoT Shadowのフラグ取得は互いに依存しないため並列化する
-  const [lastSeenAt, alreadyAlerted] = await Promise.all([getLastSeenAt(thingName), getOfflineAlertedFlag(thingName)]);
+  const [lastSeenAt, flags] = await Promise.all([
+    getLastSeenAt(thingName),
+    getReportedFlags(thingName, SHADOW_FLAG_KEYS),
+  ]);
+  const alreadyAlerted = flags.offline_alerted;
 
   if (lastSeenAt === null) {
     console.log(`${thingName}: no data found. skip.`);
@@ -52,14 +58,14 @@ async function checkThing(thingName: string, now: Date): Promise<string> {
       `**${thingName}**\n📡 最終データ受信から${elapsedHours.toFixed(1)}時間、応答がありません。` +
       `\n最終受信: ${lastSeenAt.toISOString()}`;
     await sendDiscordEmbed('📡 デバイス無応答アラート', text, 0xffa500);
-    await updateOfflineAlertedFlag(thingName, true);
+    await updateReportedFlags(thingName, { offline_alerted: true });
     return 'offline alert sent';
   }
 
   if (elapsedHours < OFFLINE_THRESHOLD_HOURS && alreadyAlerted) {
     const text = `**${thingName}**\n📡 データ受信を再開しました。`;
     await sendDiscordEmbed('📡 デバイス復帰', text, 0x4ecdc4);
-    await updateOfflineAlertedFlag(thingName, false);
+    await updateReportedFlags(thingName, { offline_alerted: false });
     return 'recovery sent';
   }
 

@@ -1,10 +1,4 @@
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
+import { requireEnv } from '../../shared/env';
 
 // 通知先Discord WebhookのURLを保持するSSM Parameter Store (SecureString) の名前。
 // Notification Lambdaと同一のパラメータを参照し、通知先チャンネルを1本化する。
@@ -31,9 +25,11 @@ function parseThingNames(): string[] {
 
 export const THING_NAMES = parseThingNames();
 
-// この時間（時間単位）データが来ない場合に無応答アラートを出す
+// この時間（時間単位）データが来ない場合に無応答アラートを出す。
+// CDK側（lib/device/device-monitor.ts）が唯一の設定値として必ず渡す前提で、ここではデフォルト値を持たない
+// （デフォルトを両方に持つと値がズレるリスクがあるため）。
 function parseOfflineThresholdHours(): number {
-  const raw = process.env.OFFLINE_THRESHOLD_HOURS ?? '3';
+  const raw = requireEnv('OFFLINE_THRESHOLD_HOURS');
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     // NaNのまま使うと閾値比較が常にfalseになり、アラートが一切発報されなくなる（エラーも出ない）ため、
