@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -50,4 +51,22 @@ export function createLambdaWithLogGroup(
     },
     logGroup,
   });
+}
+
+/**
+ * IoT Shadowの読み書き権限（`Midori-Mon-WaterWatcher-*` プレフィックス一致）をLambdaに付与する共通ヘルパー。
+ * device-lambda.ts / device-monitor.ts で同一のPolicyStatementが重複していたため切り出した。
+ */
+export function grantThingShadowAccess(
+  stack: cdk.Stack,
+  fn: lambda.IFunction,
+  thingNamePrefix = 'Midori-Mon-WaterWatcher-*',
+): void {
+  fn.addToRolePolicy(
+    new iam.PolicyStatement({
+      sid: 'ShadowReadWriteByPrefix',
+      actions: ['iot:GetThingShadow', 'iot:UpdateThingShadow'],
+      resources: [cdk.Arn.format({ service: 'iot', resource: 'thing', resourceName: thingNamePrefix }, stack)],
+    }),
+  );
 }

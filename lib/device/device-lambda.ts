@@ -1,16 +1,16 @@
 import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as path from 'path';
-import { createLambdaWithLogGroup, LambdaWithLogGroupConfig } from '../shared/create-lambda';
-import { BATTERY_TABLE_NAME, MOISTURE_TABLE_NAME, TEMPERATURE_TABLE_NAME } from '../shared/water-watcher-constants';
-
-// 通知先Discord WebhookのURLを保持するSSM Parameter Store (SecureString) の名前。
-// 値自体はCDKで管理せず、事前に `aws ssm put-parameter --type SecureString` で登録しておく想定。
-const DISCORD_WEBHOOK_URL_PARAM_NAME = '/midori-mon-waterwatcher/notification-cdk/discord-webhook-url';
+import { createLambdaWithLogGroup, grantThingShadowAccess, LambdaWithLogGroupConfig } from '../shared/create-lambda';
+import {
+  BATTERY_TABLE_NAME,
+  DISCORD_WEBHOOK_URL_PARAM_NAME,
+  MOISTURE_TABLE_NAME,
+  TEMPERATURE_TABLE_NAME,
+} from '../shared/water-watcher-constants';
 
 const NOTIFICATION_LAMBDAS: LambdaWithLogGroupConfig[] = [
   {
@@ -45,13 +45,7 @@ export function createDeviceLambdas(stack: cdk.Stack): Record<string, lambdaNode
   // Notification: IoT Shadowの読み書き + Moisture/Battery/Temperatureテーブルへの書き込み権限（本番Lambdaの既存ポリシーと同一）
   const notificationFn = functions['WaterWatcherNotificationCdkFunction'];
 
-  notificationFn.addToRolePolicy(
-    new iam.PolicyStatement({
-      sid: 'ShadowReadWriteByPrefix',
-      actions: ['iot:GetThingShadow', 'iot:UpdateThingShadow'],
-      resources: [cdk.Arn.format({ service: 'iot', resource: 'thing', resourceName: 'Midori-Mon-WaterWatcher-*' }, stack)],
-    }),
-  );
+  grantThingShadowAccess(stack, notificationFn);
 
   const moistureTable = dynamodb.Table.fromTableName(stack, 'NotificationCdkMoistureTableRef', MOISTURE_TABLE_NAME);
   const batteryTable = dynamodb.Table.fromTableName(stack, 'NotificationCdkBatteryTableRef', BATTERY_TABLE_NAME);

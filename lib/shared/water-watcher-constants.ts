@@ -11,3 +11,7 @@ export const THING_NAMES = [
   'Midori-Mon-WaterWatcher-02',
   'Midori-Mon-WaterWatcher-03',
 ];
+
+// 通知先Discord WebhookのURLを保持するSSM Parameter Store (SecureString) の名前。
+// Notification-cdk / DeviceMonitor-cdk の両方が同一パラメータを参照し、通知先チャンネルを1本化する。
+export const DISCORD_WEBHOOK_URL_PARAM_NAME = '/midori-mon-waterwatcher/notification-cdk/discord-webhook-url';

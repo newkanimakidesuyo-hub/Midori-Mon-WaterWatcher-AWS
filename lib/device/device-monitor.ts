@@ -2,19 +2,15 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
-import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as path from 'path';
-import { createLambdaWithLogGroup } from '../shared/create-lambda';
-import { MOISTURE_TABLE_NAME, THING_NAMES } from '../shared/water-watcher-constants';
+import { createLambdaWithLogGroup, grantThingShadowAccess } from '../shared/create-lambda';
+import { DISCORD_WEBHOOK_URL_PARAM_NAME, MOISTURE_TABLE_NAME, THING_NAMES } from '../shared/water-watcher-constants';
 
 const FUNCTION_NAME = 'Midori-Mon-WaterWatcher-DeviceMonitor-cdk';
 const OFFLINE_THRESHOLD_HOURS = 3;
 const CHECK_INTERVAL = cdk.Duration.minutes(30);
-
-// Notification-cdkと同一のSSMパラメータを参照し、通知先Discordチャンネルを1本化する
-const DISCORD_WEBHOOK_URL_PARAM_NAME = '/midori-mon-waterwatcher/notification-cdk/discord-webhook-url';
 
 /**
  * デバイスからのデータが一定時間（デフォルト3時間）届かない場合にDiscordへ通知するLambda。
@@ -45,13 +41,7 @@ export function createDeviceMonitor(stack: cdk.Stack): lambda.IFunction {
   moistureTable.grantReadData(monitorFn);
 
   // IoT Shadow: 無応答アラート済みフラグの読み書き
-  monitorFn.addToRolePolicy(
-    new iam.PolicyStatement({
-      sid: 'ShadowReadWriteByPrefix',
-      actions: ['iot:GetThingShadow', 'iot:UpdateThingShadow'],
-      resources: [cdk.Arn.format({ service: 'iot', resource: 'thing', resourceName: 'Midori-Mon-WaterWatcher-*' }, stack)],
-    }),
-  );
+  grantThingShadowAccess(stack, monitorFn);
 
   // Discord Webhook URL（Notification-cdkと共通のパラメータ）
   const webhookParam = ssm.StringParameter.fromSecureStringParameterAttributes(
