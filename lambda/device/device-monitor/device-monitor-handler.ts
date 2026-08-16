@@ -33,8 +33,8 @@ async function getLastSeenAt(thingName: string): Promise<Date | null> {
 
 /** 1台分のThingについて、無応答/復帰の判定と通知を行う。 */
 async function checkThing(thingName: string, now: Date): Promise<string> {
-  const lastSeenAt = await getLastSeenAt(thingName);
-  const alreadyAlerted = await getOfflineAlertedFlag(thingName);
+  // DynamoDBの最終受信時刻取得とIoT Shadowのフラグ取得は互いに依存しないため並列化する
+  const [lastSeenAt, alreadyAlerted] = await Promise.all([getLastSeenAt(thingName), getOfflineAlertedFlag(thingName)]);
 
   if (lastSeenAt === null) {
     console.log(`${thingName}: no data found. skip.`);
