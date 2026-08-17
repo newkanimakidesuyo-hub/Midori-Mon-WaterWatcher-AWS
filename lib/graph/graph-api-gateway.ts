@@ -17,6 +17,11 @@ export function createGraphApiGateway(stack: cdk.Stack, grafanaGraphFn: lambdaNo
       stageName: 'Midori-Mon-WaterWatcher-Grafana-Graph-cdk-Stage',
     },
     apiKeySourceType: apigateway.ApiKeySourceType.HEADER,
+    // カスタムドメイン導入に伴いREGIONALへ変更（呼び出し元はLightsail上のGrafana1箇所のみで、
+    // EDGE最適化=CloudFront経由の恩恵がないため。ACM証明書もap-northeast-1で完結させたい）
+    endpointConfiguration: {
+      types: [apigateway.EndpointType.REGIONAL],
+    },
   });
 
   const integration = new apigateway.LambdaIntegration(grafanaGraphFn);
