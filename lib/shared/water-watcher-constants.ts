@@ -20,3 +20,11 @@ export const DISCORD_WEBHOOK_URL_PARAM_NAME = '/midori-mon-waterwatcher/notifica
 // 水分不足の通知と機能が混ざらないよう、Notification-cdk / DeviceMonitor-cdk の両方がこちらを参照する。
 export const DEVICE_HEALTH_WEBHOOK_URL_PARAM_NAME =
   '/midori-mon-waterwatcher/notification-cdk/discord-webhook-url-device-health';
+
+// Route53で取得済みのドメイン（ホストゾーンはCDK未管理、Route53 Registrar経由で作成済み）。
+// Grafana-Graph APIのカスタムドメイン化に使用する。
+export const DOMAIN_NAME = 'midori-mon.link';
+export const HOSTED_ZONE_ID = 'Z01077413V66BOO2N1QJ';
+
+// Grafana-Graph API Gatewayのカスタムドメイン名。
+export const GRAFANA_API_DOMAIN_NAME = `api.${DOMAIN_NAME}`;
