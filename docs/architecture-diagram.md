@@ -14,7 +14,7 @@ flowchart LR
         DDB[("DynamoDB<br/>MoistureSensor / DeviceBattery / TemperatureSensor")]
         ROUTE53["Route53<br/>api.midori-mon.link"]
         ACM["ACM証明書<br/>api.midori-mon.link"]
-        APIGW["API Gateway (REGIONAL)<br/>Midori-Mon-WaterWatcher-Grafana-Graph-cdk<br/>Custom Domain: api.midori-mon.link"]
+        APIGW["API Gateway<br/>Midori-Mon-WaterWatcher-Grafana-Graph-cdk"]
         GLAMBDA["Grafana-Graph Lambda<br/>Midori-Mon-WaterWatcher-Grafana-Graph-cdk"]
     end
 
@@ -35,7 +35,7 @@ flowchart LR
     MLAMBDA -- "Webhook POST(無応答/復帰)" --> DISCORD
     MLAMBDA -. "GetThingShadow / UpdateThingShadow<br/>(offline_alerted)" .-> IOT
 
-    GRAFANA -- "HTTPS + x-api-key<br/>(api.midori-mon.link)" --> APIGW
+    GRAFANA -- "HTTPS + x-api-key" --> APIGW
     ROUTE53 -. "Aliasレコード" .-> APIGW
     ACM -. "TLS証明書" .-> APIGW
     APIGW -- invoke --> GLAMBDA
