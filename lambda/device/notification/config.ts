@@ -21,6 +21,13 @@ export const DYNAMODB_TEMPERATURE_TABLE_NAME =
 export const LOW_THRESHOLD = 30;
 export const RECOVERY_THRESHOLD = 60;
 
+// 満充電付近（この%以上）での給電停止は、充電IC側の「充電完了→再充電」サイクル（正常挙動）による
+// ものであり実際のリスクではないため、給電停止アラートの対象から除外する
+// （Midori-Mon-SolarSensorの実データで、battery_pct 80〜100%の範囲でis_chargingが繰り返し反転することを確認済み）。
+// デバイスのバッテリー容量は小さく、本当に給電が止まった場合は短時間で電池切れになりうるため、
+// 除外はこの範囲に限定し、それ以外は待ち時間を設けず即時通知する。
+export const CHARGING_STOP_SUPPRESS_MIN_PCT = 80;
+
 // Message templates
 export const LOW_MESSAGES = [
   '💧 みどりモンだよ！のどカラカラ… お水ちょうだい〜！',

@@ -1,4 +1,11 @@
-import { LOW_MESSAGES, LOW_THRESHOLD, RECOVERY_MESSAGES, RECOVERY_THRESHOLD, THING_NAME } from './config';
+import {
+  CHARGING_STOP_SUPPRESS_MIN_PCT,
+  LOW_MESSAGES,
+  LOW_THRESHOLD,
+  RECOVERY_MESSAGES,
+  RECOVERY_THRESHOLD,
+  THING_NAME,
+} from './config';
 import { writeBatteryData, writeMoistureData, writeTemperatureData } from './db-writer';
 import { sendDeviceHealthDiscordEmbed, sendDiscordEmbed } from './discord-notifier';
 import { BatteryInfo, ShadowEvent, extractBattery, extractMoisture, extractMoistureResult, extractTemperature } from './event-parser';
@@ -50,9 +57,16 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
   const battLine = batteryLine(battery);
   const actions: string[] = [];
 
-  // 給電停止/再開チェック（水分データの有無とは独立に毎回実行する）
+  // 給電停止/再開チェック（水分データの有無とは独立に毎回実行する）。
+  // 満充電付近(CHARGING_STOP_SUPPRESS_MIN_PCT%以上)での給電停止は、充電IC側の正常な
+  // 充電完了/再充電サイクルであり実際のリスクではないため、停止アラートの対象から除外する。
+  // それ以外は待ち時間を設けず従来どおり即時通知する（バッテリー容量が小さく、本当に給電が
+  // 止まった場合は短時間で電池切れになりうるため）。
   const isCharging = battery?.is_charging ?? null;
-  if (isCharging === false && !flags.charging_alerted) {
+  const batteryPct = battery?.battery_pct ?? null;
+  const isNormalFullChargeCycle = batteryPct !== null && batteryPct >= CHARGING_STOP_SUPPRESS_MIN_PCT;
+
+  if (isCharging === false && !flags.charging_alerted && !isNormalFullChargeCycle) {
     const text = `**${thingName}**\n⚡ 給電が停止しました。まもなく稼働が停止する可能性があります。${battLine}`;
     await sendDeviceHealthDiscordEmbed('🔌 給電停止アラート', text, 0xffa500);
     await updateReportedFlags(thingName, { charging_alerted: true });
