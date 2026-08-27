@@ -88,3 +88,12 @@ export function extractBattery(event: ShadowEvent): BatteryInfo | null {
     result: toBool(battery.result),
   };
 }
+
+/** Return state.reported.system.firmware_version (ビルド時点のgitコミットハッシュ), or null if absent. */
+export function extractFirmwareVersion(event: ShadowEvent): string | null {
+  const system = getReported(event).system;
+  if (typeof system !== 'object' || system === null) return null;
+
+  const version = system.firmware_version;
+  return typeof version === 'string' && version.length > 0 ? version : null;
+}

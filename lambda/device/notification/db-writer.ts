@@ -37,9 +37,13 @@ export async function writeMoistureData(
 }
 
 /** Write one row to Midori-Mon-WaterWatcher-DB-DeviceBattery. */
-export async function writeBatteryData(thingName: string, battery: BatteryInfo | null): Promise<void> {
-  if (typeof battery !== 'object' || battery === null) return;
-
+export async function writeBatteryData(
+  thingName: string,
+  battery: BatteryInfo | null,
+  firmwareVersion: string | null,
+): Promise<void> {
+  // battery群が無くてもfirmware_versionだけは記録したいケースがあり得るため、
+  // battery不在を理由に早期returnはしない（battery群のみ書かないだけ）。
   const timestamp = utcTimestamp();
 
   const item: Record<string, unknown> = {
@@ -47,10 +51,19 @@ export async function writeBatteryData(thingName: string, battery: BatteryInfo |
     timestamp,
   };
 
-  if (battery.battery_mv !== null) item.battery_mv = battery.battery_mv;
-  if (battery.battery_pct !== null) item.battery_pct = battery.battery_pct;
-  if (battery.is_charging !== null) item.is_charging = battery.is_charging;
-  if (battery.result !== null) item.result = battery.result;
+  if (battery !== null) {
+    if (battery.battery_mv !== null) item.battery_mv = battery.battery_mv;
+    if (battery.battery_pct !== null) item.battery_pct = battery.battery_pct;
+    if (battery.is_charging !== null) item.is_charging = battery.is_charging;
+    if (battery.result !== null) item.result = battery.result;
+  }
+  if (firmwareVersion !== null) item.firmware_version = firmwareVersion;
+
+  // battery/firmware_versionのいずれも無ければ書き込む価値のある情報が無いためスキップ
+  // (thing_name/timestamp以外に書くものがあるかを明示的に判定する。item のキー数を数える
+  //  実装だと、将来別の常時フィールドが増えたときに閾値がズレて黙って壊れるため避ける)
+  const hasData = battery !== null || firmwareVersion !== null;
+  if (!hasData) return;
 
   await docClient.send(new PutCommand({ TableName: DYNAMODB_BATTERY_TABLE_NAME, Item: item }));
   console.log(`DynamoDB battery write OK: thing_name=${thingName}, timestamp=${timestamp}`);

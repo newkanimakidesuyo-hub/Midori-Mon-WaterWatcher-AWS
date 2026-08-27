@@ -8,7 +8,15 @@ import {
 } from './config';
 import { writeBatteryData, writeMoistureData, writeTemperatureData } from './db-writer';
 import { sendDeviceHealthDiscordEmbed, sendDiscordEmbed } from './discord-notifier';
-import { BatteryInfo, ShadowEvent, extractBattery, extractMoisture, extractMoistureResult, extractTemperature } from './event-parser';
+import {
+  BatteryInfo,
+  ShadowEvent,
+  extractBattery,
+  extractFirmwareVersion,
+  extractMoisture,
+  extractMoistureResult,
+  extractTemperature,
+} from './event-parser';
 import { getReportedFlags, updateReportedFlags } from '../../shared/iot-shadow-flags';
 
 const SHADOW_FLAG_KEYS = ['alerted', 'charging_alerted'] as const;
@@ -41,17 +49,19 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
   const moistureResult = extractMoistureResult(event);
   const battery = extractBattery(event);
   const temperature = extractTemperature(event);
+  const firmwareVersion = extractFirmwareVersion(event);
   const thingName = event?.thing_name ?? THING_NAME;
   const flags = await getReportedFlags(thingName, SHADOW_FLAG_KEYS);
 
   console.log(
     `Parsed: moisture=${moisture}, moisture_result=${moistureResult}, ` +
-      `battery=${JSON.stringify(battery)}, temperature=${JSON.stringify(temperature)}, flags=${JSON.stringify(flags)}, thing_name=${thingName}`,
+      `battery=${JSON.stringify(battery)}, temperature=${JSON.stringify(temperature)}, ` +
+      `firmware_version=${firmwareVersion}, flags=${JSON.stringify(flags)}, thing_name=${thingName}`,
   );
 
   // 受信データを問わず毎回DynamoDBに記録
   await writeMoistureData(thingName, moisture, moistureResult, flags.alerted);
-  await writeBatteryData(thingName, battery);
+  await writeBatteryData(thingName, battery, firmwareVersion);
   await writeTemperatureData(thingName, temperature);
 
   const battLine = batteryLine(battery);
