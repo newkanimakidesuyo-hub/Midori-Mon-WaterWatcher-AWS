@@ -2,10 +2,11 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
 
-import { DYNAMODB_TABLE_MOISTURE, DYNAMODB_TABLE_TEMPERATURE, THING_NAMES } from './config';
+import { DYNAMODB_TABLE_BATTERY, DYNAMODB_TABLE_MOISTURE, DYNAMODB_TABLE_TEMPERATURE, THING_NAMES } from './config';
 
 // Grafana SimpleJSON datasource プラグイン向けのデータソースAPI。
-// エンドポイント: GET / (ヘルスチェック), POST /search, POST /query/moisture, POST /query/temperature_c
+// エンドポイント: GET / (ヘルスチェック), POST /search, POST /query/moisture, POST /query/temperature_c,
+//                POST /query/firmware_version（機体ごとの現在値をtable形式で返す。時系列ではない）
 
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -70,14 +71,60 @@ async function queryTarget(target: string, from: string, to: string) {
   return { target, datapoints };
 }
 
-/** /search が返す候補一覧。各Thingについて素の名前とmoisture/temperature_c付きの3種類を返す。 */
+/** /search が返す候補一覧。各Thingについて素の名前とmoisture/temperature_c付きの3種類、加えて全機種横断のfirmware_versionを返す。 */
 function buildSearchList(): string[] {
   const candidates = THING_NAMES.flatMap((thingName) => [
     thingName,
     `${thingName}:moisture`,
     `${thingName}:temperature_c`,
   ]);
-  return [...new Set(candidates)];
+  // firmware_versionはThingごとの時系列ではなく全機種を1つのtableで見せるため、Thing名を付けない単独ターゲット
+  return [...new Set(candidates), 'firmware_version'];
+}
+
+interface GrafanaTableResult {
+  columns: { text: string; type: string }[];
+  rows: (number | string)[][];
+  type: 'table';
+}
+
+/**
+ * 各Thingの最新ファームウェアバージョンをGrafana SimpleJSONのtable形式で返す。
+ * moisture/temperature_cと違い「今の値」を機体ごとに並べて見たい情報のため時系列にはしない。
+ */
+async function queryFirmwareVersionTable(): Promise<GrafanaTableResult> {
+  const rows = await Promise.all(
+    THING_NAMES.map(async (thingName): Promise<(number | string)[] | null> => {
+      const result = await docClient.send(
+        new QueryCommand({
+          TableName: DYNAMODB_TABLE_BATTERY,
+          KeyConditionExpression: 'thing_name = :name',
+          ExpressionAttributeValues: { ':name': thingName },
+          ScanIndexForward: false,
+          Limit: 1,
+        }),
+      );
+
+      const item = result.Items?.[0];
+      if (!item?.timestamp) return null;
+
+      const timeMs = new Date(item.timestamp).getTime();
+      if (!Number.isFinite(timeMs)) return null;
+
+      const version = typeof item.firmware_version === 'string' ? item.firmware_version : '(unknown)';
+      return [timeMs, thingName, version];
+    }),
+  );
+
+  return {
+    columns: [
+      { text: 'Time', type: 'time' },
+      { text: 'Thing', type: 'string' },
+      { text: 'Firmware Version', type: 'string' },
+    ],
+    rows: rows.filter((row): row is (number | string)[] => row !== null),
+    type: 'table',
+  };
 }
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
@@ -101,6 +148,11 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const { from, to } = body.range;
     const results = await Promise.all(body.targets.map((t) => queryTarget(t.target, from, to)));
     return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify(results) };
+  }
+
+  if (method === 'POST' && path === '/query/firmware_version') {
+    const table = await queryFirmwareVersionTable();
+    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify([table]) };
   }
 
   return { statusCode: 404, headers: CORS_HEADERS, body: JSON.stringify({ message: 'Not found' }) };
