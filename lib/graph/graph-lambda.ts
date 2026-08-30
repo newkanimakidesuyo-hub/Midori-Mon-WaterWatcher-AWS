@@ -19,7 +19,8 @@ const GRAPH_LAMBDAS: LambdaWithLogGroupConfig[] = [
     runtime: lambda.Runtime.NODEJS_24_X,
     entry: path.join(__dirname, '../../lambda/graph/grafana-api/grafana-api-handler.ts'),
     depsLockFilePath: path.join(__dirname, '../../package-lock.json'),
-    description: 'Grafana SimpleJSON datasource API backed by DynamoDB (moisture / temperature_c / firmware_version)',
+    description:
+      'Grafana SimpleJSON datasource API backed by DynamoDB (moisture / temperature_c / firmware_version / device_status)',
     timeout: cdk.Duration.seconds(3), // 本番と同値
     memorySize: 128, // 本番と同値
     environment: {

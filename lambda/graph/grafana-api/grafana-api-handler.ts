@@ -6,7 +6,8 @@ import { DYNAMODB_TABLE_BATTERY, DYNAMODB_TABLE_MOISTURE, DYNAMODB_TABLE_TEMPERA
 
 // Grafana SimpleJSON datasource プラグイン向けのデータソースAPI。
 // エンドポイント: GET / (ヘルスチェック), POST /search, POST /query/moisture, POST /query/temperature_c,
-//                POST /query/firmware_version（機体ごとの現在値をtable形式で返す。時系列ではない）
+//                POST /query/firmware_version（機体ごとの現在値をtable形式で返す。時系列ではない）,
+//                POST /query/device_status（機体ごとの最終受信からの経過分をtable形式で返す。時系列ではない）
 
 const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
@@ -78,8 +79,8 @@ function buildSearchList(): string[] {
     `${thingName}:moisture`,
     `${thingName}:temperature_c`,
   ]);
-  // firmware_versionはThingごとの時系列ではなく全機種を1つのtableで見せるため、Thing名を付けない単独ターゲット
-  return [...new Set(candidates), 'firmware_version'];
+  // firmware_version / device_status はThingごとの時系列ではなく全機種を1つのtableで見せるため、Thing名を付けない単独ターゲット
+  return [...new Set(candidates), 'firmware_version', 'device_status'];
 }
 
 type TableCell = number | string | boolean | null;
@@ -184,6 +185,81 @@ async function queryFirmwareVersionTable(): Promise<GrafanaTableResult> {
   };
 }
 
+// 最終受信から何分でオフラインとみなすか。device-monitor Lambda（lib/device/device-monitor.ts）の
+// OFFLINE_THRESHOLD_HOURS = 3 と一致させる。Grafana の色分けと Discord の無応答アラートで判定がズレると
+// 「グラフは赤いのにアラートが来ない（逆も）」という混乱が起きるため。
+const OFFLINE_THRESHOLD_MINUTES = 3 * 60;
+
+interface DeviceStatusRow {
+  lastReportMs: number | null;
+  thingName: string;
+  elapsedMinutes: number | null;
+  elapsedHours: number | null;
+  online: boolean;
+}
+
+/**
+ * 各Thingの「最終データ受信からの経過時間」をGrafana SimpleJSONのtable形式で返す。
+ * firmware_versionと同じ「今の値を機体ごとに並べる」クエリで、Stat パネルでのオンライン状態一目確認用。
+ *
+ * 最終受信は device-monitor Lambda と同じ Moisture テーブルの最新 timestamp を基準にする
+ * （firmware_version が使う Battery テーブルではなく、無応答アラートと同一ソースに揃える）。
+ * elapsed_minutes（判定用の分）/ elapsed_hours（表示用。小数1桁）/ online は Lambda 側で算出する
+ * （Grafana 側だと "now" の扱いがデータソース依存になるため。Stat パネルは h 単位固定で見せたいので
+ * 分から時間への換算も Lambda 側でやり、Grafana の自動単位スケーリング（min/day/week）を避ける）。
+ * データが1件も無い Thing は各経過値を null、online を false で返す。
+ */
+async function queryDeviceStatusTable(nowMs: number): Promise<GrafanaTableResult> {
+  const rows = await Promise.all(
+    THING_NAMES.map(async (thingName): Promise<DeviceStatusRow> => {
+      const result = await docClient.send(
+        new QueryCommand({
+          TableName: DYNAMODB_TABLE_MOISTURE,
+          KeyConditionExpression: 'thing_name = :name',
+          ExpressionAttributeValues: { ':name': thingName },
+          ScanIndexForward: false,
+          Limit: 1,
+        }),
+      );
+
+      const item = result.Items?.[0];
+      const lastReportMs = item?.timestamp ? new Date(item.timestamp).getTime() : Number.NaN;
+      if (!Number.isFinite(lastReportMs)) {
+        return { lastReportMs: null, thingName, elapsedMinutes: null, elapsedHours: null, online: false };
+      }
+
+      // 時計ずれ等で未来の timestamp が来ても負値にしない
+      const elapsedMs = Math.max(0, nowMs - lastReportMs);
+      const elapsedMinutes = Math.round(elapsedMs / 60_000);
+      return {
+        lastReportMs,
+        thingName,
+        elapsedMinutes,
+        elapsedHours: Math.round(elapsedMs / 3_600_000 * 10) / 10,
+        online: elapsedMinutes < OFFLINE_THRESHOLD_MINUTES,
+      };
+    }),
+  );
+
+  return {
+    columns: [
+      { text: 'Time', type: 'time' },
+      { text: 'Thing', type: 'string' },
+      { text: 'elapsed_minutes', type: 'number' },
+      { text: 'elapsed_hours', type: 'number' },
+      { text: 'online', type: 'boolean' },
+    ],
+    rows: rows.map((row) => [
+      row.lastReportMs,
+      row.thingName,
+      row.elapsedMinutes,
+      row.elapsedHours,
+      row.online,
+    ]),
+    type: 'table',
+  };
+}
+
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   const path = event.path ?? '/';
   const method = event.httpMethod;
@@ -209,6 +285,11 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
   if (method === 'POST' && path === '/query/firmware_version') {
     const table = await queryFirmwareVersionTable();
+    return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify([table]) };
+  }
+
+  if (method === 'POST' && path === '/query/device_status') {
+    const table = await queryDeviceStatusTable(Date.now());
     return { statusCode: 200, headers: CORS_HEADERS, body: JSON.stringify([table]) };
   }
 
