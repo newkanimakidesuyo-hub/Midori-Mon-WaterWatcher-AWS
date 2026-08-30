@@ -82,19 +82,58 @@ function buildSearchList(): string[] {
   return [...new Set(candidates), 'firmware_version'];
 }
 
+type TableCell = number | string | boolean | null;
+
 interface GrafanaTableResult {
   columns: { text: string; type: string }[];
-  rows: (number | string)[][];
+  rows: TableCell[][];
   type: 'table';
+}
+
+interface ParsedFirmware {
+  build_date: string | null;
+  commit: string | null;
+}
+
+/**
+ * "YYYYMMDD-<gitコミットハッシュ短縮形>" / "YYYYMMDD-unknown" を分解する。
+ * inject_firmware_version.py（Deviceリポジトリ）が生成する形式に対応。想定外の文字列は全フィールドnull扱い。
+ * 旧ファームが送ってくる "-dirty" サフィックスは無視する（後方互換）。SolarSensorと同一実装。
+ */
+function parseFirmwareVersion(raw: string): ParsedFirmware {
+  const m = /^(\d{4})(\d{2})(\d{2})-([^-]+)(?:-dirty)?$/.exec(raw);
+  if (!m) return { build_date: null, commit: null };
+
+  const [, year, month, day, commit] = m;
+  const buildDate = `${year}-${month}-${day}`;
+  if (Number.isNaN(Date.parse(`${buildDate}T00:00:00Z`))) return { build_date: null, commit: null };
+
+  return {
+    build_date: buildDate,
+    commit: commit === 'unknown' ? null : commit,
+  };
+}
+
+interface FirmwareRow {
+  timeMs: number;
+  thingName: string;
+  version: string;
+  build_date: string | null;
+  commit: string | null;
 }
 
 /**
  * 各Thingの最新ファームウェアバージョンをGrafana SimpleJSONのtable形式で返す。
  * moisture/temperature_cと違い「今の値」を機体ごとに並べて見たい情報のため時系列にはしない。
+ *
+ * 既存の Time / Thing / Firmware Version 列は後方互換のため残し、
+ * build_date（"YYYY-MM-DD" / パース不可は null）、commit（短縮ハッシュ / unknown・未パースは null）、
+ * is_latest（返却行のうち最大 build_date と一致するか。YYYY-MM-DD は辞書順=日付順）を追加する。
+ * 全機体を同一ビルドで運用する前提の「更新漏れ」検知を Grafana 側で組めるようにするため。
  */
 async function queryFirmwareVersionTable(): Promise<GrafanaTableResult> {
-  const rows = await Promise.all(
-    THING_NAMES.map(async (thingName): Promise<(number | string)[] | null> => {
+  const parsed = await Promise.all(
+    THING_NAMES.map(async (thingName): Promise<FirmwareRow | null> => {
       const result = await docClient.send(
         new QueryCommand({
           TableName: DYNAMODB_TABLE_BATTERY,
@@ -112,8 +151,16 @@ async function queryFirmwareVersionTable(): Promise<GrafanaTableResult> {
       if (!Number.isFinite(timeMs)) return null;
 
       const version = typeof item.firmware_version === 'string' ? item.firmware_version : '(unknown)';
-      return [timeMs, thingName, version];
+      return { timeMs, thingName, version, ...parseFirmwareVersion(version) };
     }),
+  );
+
+  const present = parsed.filter((row): row is FirmwareRow => row !== null);
+
+  // 返却行の中で最も新しい build_date を「最新」の基準にする（YYYY-MM-DD は辞書順比較で日付順）。
+  const latestBuildDate = present.reduce<string | null>(
+    (max, row) => (row.build_date !== null && (max === null || row.build_date > max) ? row.build_date : max),
+    null,
   );
 
   return {
@@ -121,8 +168,18 @@ async function queryFirmwareVersionTable(): Promise<GrafanaTableResult> {
       { text: 'Time', type: 'time' },
       { text: 'Thing', type: 'string' },
       { text: 'Firmware Version', type: 'string' },
+      { text: 'build_date', type: 'string' },
+      { text: 'commit', type: 'string' },
+      { text: 'is_latest', type: 'boolean' },
     ],
-    rows: rows.filter((row): row is (number | string)[] => row !== null),
+    rows: present.map((row) => [
+      row.timeMs,
+      row.thingName,
+      row.version,
+      row.build_date,
+      row.commit,
+      row.build_date !== null && row.build_date === latestBuildDate,
+    ]),
     type: 'table',
   };
 }
