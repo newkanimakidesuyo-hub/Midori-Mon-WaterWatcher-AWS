@@ -57,6 +57,17 @@ export function extractMoistureResult(event: ShadowEvent): boolean | null {
 }
 
 /**
+ * Return moisture_sensor_unit.raw (センサーのサンプル平均生値), or null if absent.
+ * 未接続センサーの切り分けや校正帯域の見直しに使う診断値。
+ */
+export function extractMoistureRaw(event: ShadowEvent): number | null {
+  const unit = getReported(event).moisture_sensor_unit ?? {};
+  const raw = toInt(unit.raw);
+  // 生値なしを表すファーム側の番兵(-1)はnull扱いにする
+  return raw === null || raw < 0 ? null : raw;
+}
+
+/**
  * Return temperature_sensor fields as an object, or null if the group is absent.
  *
  * Keys: temperature_c (number), result (boolean)
