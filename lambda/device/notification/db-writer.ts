@@ -20,6 +20,7 @@ export async function writeMoistureData(
   moisture: number | null,
   result: boolean | null,
   alerted: boolean,
+  raw: number | null = null,
 ): Promise<void> {
   const timestamp = utcTimestamp();
 
@@ -31,6 +32,8 @@ export async function writeMoistureData(
 
   if (moisture !== null) item.moisture = moisture;
   if (result !== null) item.result = result;
+  // 生値。moisture=null（読み取り失敗）の行でも記録しておき、未接続の切り分けに使う。
+  if (raw !== null) item.raw = raw;
 
   await docClient.send(new PutCommand({ TableName: DYNAMODB_MOISTURE_TABLE_NAME, Item: item }));
   console.log(`DynamoDB moisture write OK: thing_name=${thingName}, timestamp=${timestamp}`);

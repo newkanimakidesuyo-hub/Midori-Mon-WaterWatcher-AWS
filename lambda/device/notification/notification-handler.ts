@@ -14,6 +14,7 @@ import {
   extractBattery,
   extractFirmwareVersion,
   extractMoisture,
+  extractMoistureRaw,
   extractMoistureResult,
   extractTemperature,
 } from './event-parser';
@@ -47,6 +48,7 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
 
   const moisture = extractMoisture(event);
   const moistureResult = extractMoistureResult(event);
+  const moistureRaw = extractMoistureRaw(event);
   const battery = extractBattery(event);
   const temperature = extractTemperature(event);
   const firmwareVersion = extractFirmwareVersion(event);
@@ -54,13 +56,21 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
   const flags = await getReportedFlags(thingName, SHADOW_FLAG_KEYS);
 
   console.log(
-    `Parsed: moisture=${moisture}, moisture_result=${moistureResult}, ` +
+    `Parsed: moisture=${moisture}, moisture_result=${moistureResult}, moisture_raw=${moistureRaw}, ` +
       `battery=${JSON.stringify(battery)}, temperature=${JSON.stringify(temperature)}, ` +
       `firmware_version=${firmwareVersion}, flags=${JSON.stringify(flags)}, thing_name=${thingName}`,
   );
 
+  // センサー読み取り失敗(result === false)時は moisture 値を信用しない。
+  // 未接続/未設置のセンサーはG33のフローティングで 0 や 100 を "正常値" として送ってくる
+  // ことがあり（既知の症状）、そのままだとグラフを汚し、水分不足アラートも誤発報する。
+  // 行自体は診断用に残す（result=false で記録）が、moisture は null にして
+  // グラフ描画・水分チェックの対象から外す。
+  const moistureReadOk = moistureResult !== false;
+  const usableMoisture = moistureReadOk ? moisture : null;
+
   // 受信データを問わず毎回DynamoDBに記録
-  await writeMoistureData(thingName, moisture, moistureResult, flags.alerted);
+  await writeMoistureData(thingName, usableMoisture, moistureResult, flags.alerted, moistureRaw);
   await writeBatteryData(thingName, battery, firmwareVersion);
   await writeTemperatureData(thingName, temperature);
 
@@ -88,20 +98,20 @@ export const handler = async (event: ShadowEvent): Promise<LambdaResult> => {
     actions.push('charging resume sent');
   }
 
-  if (moisture === null) {
-    console.log('Moisture not found. Skip moisture check.');
+  if (usableMoisture === null) {
+    console.log(`Moisture not usable (moisture=${moisture}, result=${moistureResult}). Skip moisture check.`);
     return { statusCode: 200, body: actions.length > 0 ? actions.join(', ') : 'skipped: no moisture' };
   }
 
-  console.log(`Check: moisture=${moisture}, alerted=${flags.alerted}`);
+  console.log(`Check: moisture=${usableMoisture}, alerted=${flags.alerted}`);
 
-  if (moisture <= LOW_THRESHOLD && !flags.alerted) {
-    const text = `**${thingName}**\n${pickRandom(LOW_MESSAGES)}\n現在の水分: **${moisture}%**${battLine}`;
+  if (usableMoisture <= LOW_THRESHOLD && !flags.alerted) {
+    const text = `**${thingName}**\n${pickRandom(LOW_MESSAGES)}\n現在の水分: **${usableMoisture}%**${battLine}`;
     await sendDiscordEmbed('🚨 水分不足アラート', text, 0xff6b6b);
     await updateReportedFlags(thingName, { alerted: true });
     actions.push('low alert sent');
-  } else if (moisture >= RECOVERY_THRESHOLD && flags.alerted) {
-    const text = `**${thingName}**\n${pickRandom(RECOVERY_MESSAGES)}\n現在の水分: **${moisture}%**${battLine}`;
+  } else if (usableMoisture >= RECOVERY_THRESHOLD && flags.alerted) {
+    const text = `**${thingName}**\n${pickRandom(RECOVERY_MESSAGES)}\n現在の水分: **${usableMoisture}%**${battLine}`;
     await sendDiscordEmbed('✅ 回復通知', text, 0x4ecdc4); // 緑青系
     await updateReportedFlags(thingName, { alerted: false });
     actions.push('recovery sent');
